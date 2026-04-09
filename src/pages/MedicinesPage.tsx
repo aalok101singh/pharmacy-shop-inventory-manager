@@ -128,7 +128,7 @@ export default function MedicinesPage() {
       setSuccess("Medicine saved!");
       setForm(initialForm);
       // To reset select field
-      setForm((f) => ({ ...initialForm }));
+      setForm(() => ({ ...initialForm }));
       fetchMedicinesAndBatches();
       // Hide success message after short delay
       setTimeout(() => setSuccess(null), 1500);
