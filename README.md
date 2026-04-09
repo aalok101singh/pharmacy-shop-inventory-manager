@@ -3,7 +3,7 @@ Medicine Shop Inventory Manager
 A simple, mobile-friendly inventory + billing app for small medicine shops.
 
 Live App:
-https://pharmacy-shop-inventory-manager.vercel.app/medicines
+https://pharmacy-shop-inventory-manager.vercel.app/
 
 What this does?
 
