@@ -30,6 +30,9 @@ export default function MedicinesPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // NEW: Track which medicine is being deleted (by id), and a delete error for per-medicine delete error feedback
+  const [deletingMedicineId, setDeletingMedicineId] = useState<string | null>(null);
+
   // Fetch medicines and batches on mount
   useEffect(() => {
     fetchMedicinesAndBatches();
@@ -146,6 +149,64 @@ export default function MedicinesPage() {
           (!b.expiry_date || new Date(b.expiry_date).getTime() > today)
       )
       .reduce((sum, b) => sum + (b.quantity_available || 0), 0);
+  }
+
+  // NEW: Delete handler for medicines
+  async function handleDeleteMedicine(med: Medicine) {
+    setError(null);
+    setSuccess(null);
+    setDeletingMedicineId(med.id);
+
+    // 1. Check for any inventory_batches with this medicine
+    const { count: batchCount, error: batchError } = await supabase
+      .from("inventory_batches")
+      .select("id", { count: "exact", head: true })
+      .eq("medicine_id", med.id);
+
+    if (batchError) {
+      setDeletingMedicineId(null);
+      setError("Could not check stock for medicine.");
+      return;
+    }
+    if (batchCount && batchCount > 0) {
+      setDeletingMedicineId(null);
+      setError("Cannot delete this medicine because it is linked to stock or past sales");
+      return;
+    }
+
+    // 2. Check for any sale_items with this medicine
+    const { count: saleCount, error: saleError } = await supabase
+      .from("sale_items")
+      .select("id", { count: "exact", head: true })
+      .eq("medicine_id", med.id);
+
+    if (saleError) {
+      setDeletingMedicineId(null);
+      setError("Could not check past sales for medicine.");
+      return;
+    }
+    if (saleCount && saleCount > 0) {
+      setDeletingMedicineId(null);
+      setError("Cannot delete this medicine because it is linked to stock or past sales");
+      return;
+    }
+
+    // 3. Safe to delete
+    const { error: deleteError } = await supabase
+      .from("medicines")
+      .delete()
+      .eq("id", med.id);
+
+    setDeletingMedicineId(null);
+
+    if (deleteError) {
+      setError("Couldn't delete medicine. Please try again.");
+      return;
+    } else {
+      setSuccess("Medicine deleted.");
+      fetchMedicinesAndBatches();
+      setTimeout(() => setSuccess(null), 1200);
+    }
   }
 
   return (
@@ -283,9 +344,26 @@ export default function MedicinesPage() {
               return (
                 <Card key={med.id} className="px-5 py-4 rounded-lg">
                   <div className="flex flex-col gap-1">
-                    <span className="font-semibold text-lg text-slate-800">
-                      {med.name}
-                    </span>
+                    <div className="flex flex-row items-center justify-between">
+                      <span className="font-semibold text-lg text-slate-800">
+                        {med.name}
+                      </span>
+                      {/* Delete button, small and not aggressive */}
+                      <button
+                        type="button"
+                        aria-label={`Delete ${med.name}`}
+                        className="text-xs text-red-500 border border-red-200 bg-white px-2.5 py-1 rounded hover:bg-red-50 transition-colors ml-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{
+                          fontSize: 13,
+                          minWidth: 56,
+                          minHeight: 28,
+                        }}
+                        disabled={deletingMedicineId === med.id}
+                        onClick={() => handleDeleteMedicine(med)}
+                      >
+                        {deletingMedicineId === med.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                     <div className="flex flex-wrap items-center gap-3 text-base text-slate-600">
                       <span>
                         Unit: <span className="font-medium text-slate-700">{med.unit_type}</span>

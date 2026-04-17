@@ -6,6 +6,7 @@ export type Medicine = {
   unit_type: string;
   selling_price: number;
   minimum_stock: number;
+  is_deleted?: boolean; // Mark as deleted without removing from database
 };
 
 export type NewMedicineInput = {
@@ -24,6 +25,7 @@ export type InventoryBatch = {
   expiry_date: string;
   purchase_price: number;
   quantity_available: number;
+  is_deleted?: boolean; // Safe delete for inventory batches
 };
 
 export type NewInventoryBatchInput = {
@@ -39,6 +41,7 @@ export type Sale = {
   customer_name: string | null;
   total_amount: number;
   sold_at: string;
+  is_cancelled: boolean; // Track if a sale is cancelled
 };
 
 export type SaleItem = {

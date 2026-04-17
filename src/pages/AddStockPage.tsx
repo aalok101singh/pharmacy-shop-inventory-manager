@@ -22,13 +22,25 @@ const initialForm: FormState = {
   quantity: "",
 };
 
-// Simple helper to format ISO date string as "DD MMM YYYY" (e.g., "2026-04-12" -> "12 Apr 2026")
-// Falls back to original value if parsing fails
+// Format ISO date string to "dd/mm/yyyy"
+function formatExpiryDate(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const year = date.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return dateString;
+  }
+}
+
+// Simple helper to format ISO date string as "DD MMM YYYY"
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
-    // Use UTC to prevent timezone off-by-one
     const day = String(date.getUTCDate()).padStart(2, "0");
     const month = date.toLocaleString("en-US", {
       month: "short",
@@ -51,44 +63,48 @@ export default function AddStockPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // For per-batch delete loading state
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+
   // Fetch medicines
-  useEffect(() => {
-    async function fetchMedicines() {
-      setLoadingMedicines(true);
-      setError(null);
-      const { data, error } = await supabase
-        .from("medicines")
-        .select("*")
-        .order("name", { ascending: true });
-      if (error) {
-        setError("Couldn't load medicines right now.");
-        setMedicines([]);
-      } else {
-        setMedicines(data || []);
-      }
-      setLoadingMedicines(false);
+  async function fetchMedicines() {
+    setLoadingMedicines(true);
+    setError(null);
+    const { data, error } = await supabase
+      .from("medicines")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) {
+      setError("Couldn't load medicines right now.");
+      setMedicines([]);
+    } else {
+      setMedicines(data || []);
     }
+    setLoadingMedicines(false);
+  }
+
+  // Fetch stock batches
+  async function fetchBatches() {
+    setLoadingBatches(true);
+    setError(null);
+    const { data, error } = await supabase
+      .from("inventory_batches")
+      .select("*")
+      .order("id", { ascending: false });
+    if (error) {
+      setError("Couldn't load stock right now.");
+      setBatches([]);
+    } else {
+      setBatches(data || []);
+    }
+    setLoadingBatches(false);
+  }
+
+  useEffect(() => {
     fetchMedicines();
   }, []);
 
-  // Fetch stock batches
   useEffect(() => {
-    async function fetchBatches() {
-      setLoadingBatches(true);
-      setError(null);
-      // Fetch batches, newest first
-      const { data, error } = await supabase
-        .from("inventory_batches")
-        .select("*")
-        .order("id", { ascending: false });
-      if (error) {
-        setError("Couldn't load stock right now.");
-        setBatches([]);
-      } else {
-        setBatches(data || []);
-      }
-      setLoadingBatches(false);
-    }
     fetchBatches();
   }, []);
 
@@ -176,15 +192,55 @@ export default function AddStockPage() {
     setForm(initialForm);
 
     // Refresh batch list
-    setLoadingBatches(true);
-    const { data: refreshedBatches, error: loadError } = await supabase
-      .from("inventory_batches")
-      .select("*")
-      .order("id", { ascending: false });
-    if (!loadError) setBatches(refreshedBatches || []);
-    setLoadingBatches(false);
+    await fetchBatches();
 
     setSaving(false);
+  }
+
+  // === SAFE DELETE FUNCTIONALITY BELOW ===
+  async function handleDeleteBatch(batchId: string) {
+    // Reset error/success first; set a loading state for this batch
+    setError(null);
+    setSuccess(null);
+    setDeletingBatchId(batchId);
+
+    // 1. Check if there are any sale_items rows referencing this batch
+    const { data: saleItems, error: saleItemsError } = await supabase
+      .from("sale_items")
+      .select("id")
+      .eq("batch_id", batchId)
+      .limit(1);
+
+    if (saleItemsError) {
+      setError("Error checking sale records. Try again.");
+      setDeletingBatchId(null);
+      return;
+    }
+
+    if (saleItems && saleItems.length > 0) {
+      setError("Cannot delete this stock because it was already used in a sale");
+      setDeletingBatchId(null);
+      return;
+    }
+
+    // 2. No sale items found; safe to delete
+    const { error: deleteError } = await supabase
+      .from("inventory_batches")
+      .delete()
+      .eq("id", batchId);
+
+    if (deleteError) {
+      setError("Error deleting stock batch. Try again.");
+      setDeletingBatchId(null);
+      return;
+    }
+
+    setSuccess("Stock batch deleted.");
+    await fetchBatches();
+    // Optional: re-fetch medicines for dropdown consistency, in case of any effect
+    await fetchMedicines();
+
+    setDeletingBatchId(null);
   }
 
   return (
@@ -328,8 +384,30 @@ export default function AddStockPage() {
                   key={batch.id}
                   className="flex flex-col gap-1 px-4 py-3 shadow group"
                 >
-                  <div className="text-base font-medium">
-                    {medicineNameMap[batch.medicine_id] || "Unknown Medicine"}
+                  <div className="flex flex-row items-center justify-between">
+                    <div className="text-base font-medium">
+                      {medicineNameMap[batch.medicine_id] || "Unknown Medicine"}
+                    </div>
+                    <Button
+                      type="button"
+                      // size="sm" // Removed because Button does not support 'size' prop
+                      variant="secondary"
+                      className={`ml-2 px-2 py-[2px] rounded bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 transition-colors duration-100 text-xs h-[28px] font-semibold ${
+                        deletingBatchId === batch.id
+                          ? "opacity-60 pointer-events-none"
+                          : ""
+                      }`}
+                      disabled={deletingBatchId === batch.id}
+                      onClick={() => handleDeleteBatch(batch.id)}
+                      style={{
+                        minWidth: 60,
+                        fontWeight: 600,
+                        fontSize: 13,
+                        height: 28,
+                      }}
+                    >
+                      {deletingBatchId === batch.id ? "Deleting..." : "Delete"}
+                    </Button>
                   </div>
                   <div className="flex flex-row gap-4 text-sm text-gray-600 mt-1">
                     <span>
@@ -337,7 +415,7 @@ export default function AddStockPage() {
                     </span>
                     <span>
                       <span className="font-semibold">Expiry:</span>{" "}
-                      {formatDate(batch.expiry_date)}
+                      {formatExpiryDate(batch.expiry_date)}
                     </span>
                   </div>
                   <div className="flex flex-row gap-6 mt-1 text-sm">

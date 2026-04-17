@@ -45,21 +45,26 @@ export default function DashboardPage() {
         const endOfDay = new Date(now);
         endOfDay.setHours(23, 59, 59, 999);
 
-        // Get sales (all, filter by JS)
+        // Get sales (all, filter by JS) -- UPDATE: fetch is_cancelled as well
         const { data: salesRows, error: salesErr } = await supabase
           .from("sales")
-          .select("total_amount, sold_at");
+          .select("total_amount, sold_at, is_cancelled");
         if (salesErr) throw salesErr;
 
         setMedicines(meds ?? []);
         setBatches(bats ?? []);
 
-        // Sum today's sales total_amount (sold_at within boundaries)
+        // Sum today's sales total_amount (sold_at within boundaries AND not cancelled)
         let todaySum = 0;
         (salesRows ?? []).forEach((row) => {
+          if (row.is_cancelled) return;
           if (!row.sold_at) return;
           const saleDate = new Date(row.sold_at);
-          if (saleDate >= startOfDay && saleDate <= endOfDay && typeof row.total_amount === "number") {
+          if (
+            saleDate >= startOfDay &&
+            saleDate <= endOfDay &&
+            typeof row.total_amount === "number"
+          ) {
             todaySum += row.total_amount;
           }
         });
