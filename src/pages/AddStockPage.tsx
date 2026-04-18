@@ -37,6 +37,8 @@ function formatExpiryDate(dateString: string): string {
 }
 
 // Simple helper to format ISO date string as "DD MMM YYYY"
+// NOTE: unused, so we can safely remove this to fix TypeScript error.
+/*
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
@@ -52,6 +54,7 @@ function formatDate(dateString: string): string {
     return dateString;
   }
 }
+*/
 
 export default function AddStockPage() {
   const [form, setForm] = useState<FormState>(initialForm);
